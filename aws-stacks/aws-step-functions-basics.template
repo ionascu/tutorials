@@ -1,0 +1,110 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "An example template with an IAM role for a Lambda state machine.",
+  "Resources": {
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "LambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaExecutionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": "exports.handler = (event, context, callback) => {\n    callback(null, {value: event.value});\n};\n"
+        },
+        "Runtime": "nodejs12.x",
+        "Timeout": "25"
+      }
+    },
+    "StatesExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  {
+                    "Fn::Sub": "states.${AWS::Region}.amazonaws.com"
+                  }
+                ]
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "StatesExecutionPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:InvokeFunction"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CustomActivity" : {
+      "Type" : "AWS::StepFunctions::Activity",
+      "Properties" : {
+        "Name" : "customActivity"
+      }
+    },
+    "StateMachine": {
+      "Type": "AWS::StepFunctions::StateMachine",
+      "Properties": {
+        "DefinitionString": {
+          "Fn::Sub": [
+            "{\n  \"Comment\": \"Task state with Lambda and local Activity passed through a decision maker.\",\n  \"StartAt\": \"ChoiceState\",\n  \"Version\": \"1.0\",\n  \"TimeoutSeconds\": 300,\n  \"States\": {\n    \"getLocalState\": {\n      \"Type\": \"Task\",\n      \"Resource\": \"${activityArn}\",\n      \"End\": true\n    },\n    \"getServerlessState\": {\n      \"Type\": \"Task\",\n      \"Resource\": \"${lambdaArn}\",\n      \"Next\": \"getLocalState\"\n    },\n    \"ChoiceState\": {\n      \"Type\": \"Choice\",\n      \"Choices\": [\n        {\n          \"Not\": {\n            \"Variable\": \"$.type\",\n            \"StringEquals\": \"private\"\n          },\n          \"Next\": \"getServerlessState\"\n        },\n        {\n          \"Variable\": \"$.value\",\n          \"NumericEquals\": 0,\n          \"Next\": \"getLocalState\"\n        }\n      ],\n      \"Default\": \"DefaultState\"\n    },\n    \"DefaultState\": {\n      \"Type\": \"Fail\",\n      \"Cause\": \"Value provided does not cover our cases (private & 0)!\"\n    }\n  }\n}",
+            {
+              "activityArn": { "Ref" : "CustomActivity" },
+              "lambdaArn": {
+                "Fn::GetAtt": [
+                  "LambdaFunction",
+                  "Arn"
+                ]
+              }
+            }
+          ]
+        },
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "StatesExecutionRole",
+            "Arn"
+          ]
+        }
+      }
+    }
+  }
+}

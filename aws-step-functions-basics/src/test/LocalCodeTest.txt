@@ -1,0 +1,14 @@
+{
+  "type": "private",
+  "value": 0
+}
+
+{
+  "type": "public",
+  "value": 0
+}
+
+{
+  "type": "private",
+  "value": 10
+}
